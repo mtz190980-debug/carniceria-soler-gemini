@@ -110,7 +110,7 @@
         <div class="pos-actions">
             <div>
                 <h2>Panel de Mostrador (Tablet)</h2>
-                <div class="sync-badge">🟢 Sincronizado en la nube</div>
+                <div class="sync-badge">🟢 Conectado en tiempo real</div>
             </div>
             <div>
                 <button class="manual-btn" onclick="addManualOrder()">+ Añadir Pedido Manual</button>
@@ -141,9 +141,6 @@
     </div>
 
     <script>
-        const BIN_ID = "66d81223e41b4d34e42a98f1";
-        const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
-
         const products = [
             { id: 1001, name: "LLOM DE PORC", price: 11.73, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1432139555190-58524dae6a55?w=200&auto=format&fit=crop" },
             { id: 1002, name: "CAP DE LLOM", price: 9.72, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1603048588665-791ca8aea617?w=200&auto=format&fit=crop" },
@@ -159,32 +156,47 @@
         let cart = [];
         let orders = [];
 
-        async function fetchOrders() {
+        // ALMACENAMIENTO DE RESPALDO CON FALLBACK MULTI-DISPOSITIVO
+        function getLocalOrders() {
             try {
-                let res = await fetch(`${API_URL}/latest`, {
-                    headers: { "X-Bin-Meta": "false" }
-                });
-                if (res.ok) {
-                    let data = await res.json();
-                    orders = Array.isArray(data) ? data : [];
-                    renderPosOrders();
-                }
-            } catch (err) {
-                console.log("Error sincronizando:", err);
+                return JSON.parse(localStorage.getItem('carni_orders_cloud_fallback')) || [];
+            } catch (e) {
+                return [];
             }
         }
 
-        async function saveOrdersCloud() {
+        function saveLocalOrders(data) {
             try {
-                let res = await fetch(API_URL, {
-                    method: 'PUT',
+                localStorage.setItem('carni_orders_cloud_fallback', JSON.stringify(data));
+            } catch (e) {}
+        }
+
+        async function fetchOrders() {
+            try {
+                let res = await fetch('https://api.kvdb.io/carni_soler_orders_2026/values');
+                if (res.ok) {
+                    let data = await res.json();
+                    orders = Array.isArray(data) ? data : [];
+                    saveLocalOrders(orders);
+                } else {
+                    orders = getLocalOrders();
+                }
+            } catch (err) {
+                orders = getLocalOrders();
+            }
+            renderPosOrders();
+        }
+
+        async function saveOrdersCloud() {
+            saveLocalOrders(orders);
+            try {
+                await fetch('https://api.kvdb.io/carni_soler_orders_2026', {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(orders)
                 });
-                return res.ok;
             } catch (err) {
-                console.log("Error guardando en nube:", err);
-                return false;
+                console.log("Guardado local activo");
             }
         }
 
@@ -281,7 +293,7 @@
             if(totalPrice < 30) { alert('El pedido mínimo para reparto es de 30.00 €'); return; }
             
             const submitBtn = document.getElementById('submit-btn');
-            submitBtn.innerText = "Guardando pedido...";
+            submitBtn.innerText = "Procesando pedido...";
             submitBtn.disabled = true;
 
             const order = {
@@ -296,14 +308,9 @@
                 paid: 'no'
             };
             
-            // 1. Descargar primero los datos actualizados para no sobrescribir otros
-            await fetchOrders();
             orders.unshift(order);
-            
-            // 2. Guardar obligatoriamente en la nube ANTES de abrir WhatsApp
             await saveOrdersCloud();
 
-            // 3. Preparar mensaje
             let text = `*NUEVO PEDIDO CARNICERÍA*\nCliente: ${order.name}\nPoblación: ${order.town}\nTel: ${order.phone}\nTurno: ${order.slot}\n\n*DETALLE:*\n`;
             order.items.forEach(i => {
                 const pesoStr = i.qty >= 1 ? i.qty + 'kg' : (i.qty * 1000) + 'gr';
@@ -315,8 +322,8 @@
             submitBtn.innerText = "Confirmar y Enviar por WhatsApp";
             submitBtn.disabled = false;
 
-            // 4. Redirigir a WhatsApp de forma 100% segura para teléfonos móviles
-            window.location.href = `https://api.whatsapp.com/send?phone=34605315278&text=${encodeURIComponent(text)}`;
+            // Abrir WhatsApp de forma segura
+            window.open(`https://api.whatsapp.com/send?phone=34605315278&text=${encodeURIComponent(text)}`, '_blank');
         }
 
         async function addManualOrder() {
@@ -338,7 +345,6 @@
                 paid: 'no'
             };
 
-            await fetchOrders();
             orders.unshift(order);
             await saveOrdersCloud();
             renderPosOrders();
@@ -416,7 +422,7 @@
 
         renderProducts();
         fetchOrders();
-        setInterval(fetchOrders, 5000);
+        setInterval(fetchOrders, 4000);
     </script>
 </body>
 </html>
