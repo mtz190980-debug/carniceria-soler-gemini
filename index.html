@@ -110,7 +110,7 @@
         <div class="pos-actions">
             <div>
                 <h2>Panel de Mostrador (Tablet)</h2>
-                <div class="sync-badge">🟢 Conectado en tiempo real</div>
+                <div class="sync-badge">🟢 Sincronizado en la nube</div>
             </div>
             <div>
                 <button class="manual-btn" onclick="addManualOrder()">+ Añadir Pedido Manual</button>
@@ -141,6 +141,9 @@
     </div>
 
     <script>
+        // SERVIDOR DE NUBE SIN RESTRICCIONES DE CLAVE NI CORS
+        const CLOUD_ENDPOINT = 'https://jsonblob.com/api/jsonBlob/1280456184985288704';
+
         const products = [
             { id: 1001, name: "LLOM DE PORC", price: 11.73, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1432139555190-58524dae6a55?w=200&auto=format&fit=crop" },
             { id: 1002, name: "CAP DE LLOM", price: 9.72, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1603048588665-791ca8aea617?w=200&auto=format&fit=crop" },
@@ -156,47 +159,29 @@
         let cart = [];
         let orders = [];
 
-        // ALMACENAMIENTO DE RESPALDO CON FALLBACK MULTI-DISPOSITIVO
-        function getLocalOrders() {
-            try {
-                return JSON.parse(localStorage.getItem('carni_orders_cloud_fallback')) || [];
-            } catch (e) {
-                return [];
-            }
-        }
-
-        function saveLocalOrders(data) {
-            try {
-                localStorage.setItem('carni_orders_cloud_fallback', JSON.stringify(data));
-            } catch (e) {}
-        }
-
         async function fetchOrders() {
             try {
-                let res = await fetch('https://api.kvdb.io/carni_soler_orders_2026/values');
+                let res = await fetch(CLOUD_ENDPOINT, { method: 'GET' });
                 if (res.ok) {
                     let data = await res.json();
                     orders = Array.isArray(data) ? data : [];
-                    saveLocalOrders(orders);
-                } else {
-                    orders = getLocalOrders();
+                    renderPosOrders();
                 }
             } catch (err) {
-                orders = getLocalOrders();
+                console.log("Error sincronizando:", err);
             }
-            renderPosOrders();
         }
 
         async function saveOrdersCloud() {
-            saveLocalOrders(orders);
             try {
-                await fetch('https://api.kvdb.io/carni_soler_orders_2026', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                await fetch(CLOUD_ENDPOINT, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify(orders)
                 });
+                renderPosOrders();
             } catch (err) {
-                console.log("Guardado local activo");
+                console.log("Error guardando en nube:", err);
             }
         }
 
@@ -293,7 +278,7 @@
             if(totalPrice < 30) { alert('El pedido mínimo para reparto es de 30.00 €'); return; }
             
             const submitBtn = document.getElementById('submit-btn');
-            submitBtn.innerText = "Procesando pedido...";
+            submitBtn.innerText = "Guardando pedido...";
             submitBtn.disabled = true;
 
             const order = {
@@ -308,7 +293,11 @@
                 paid: 'no'
             };
             
+            // Traer pedidos actuales para no machacar los existentes
+            await fetchOrders();
             orders.unshift(order);
+            
+            // Guardar obligatoriamente en la nube
             await saveOrdersCloud();
 
             let text = `*NUEVO PEDIDO CARNICERÍA*\nCliente: ${order.name}\nPoblación: ${order.town}\nTel: ${order.phone}\nTurno: ${order.slot}\n\n*DETALLE:*\n`;
@@ -322,8 +311,8 @@
             submitBtn.innerText = "Confirmar y Enviar por WhatsApp";
             submitBtn.disabled = false;
 
-            // Abrir WhatsApp de forma segura
-            window.open(`https://api.whatsapp.com/send?phone=34605315278&text=${encodeURIComponent(text)}`, '_blank');
+            // Redirección segura a WhatsApp
+            window.location.href = `https://api.whatsapp.com/send?phone=34605315278&text=${encodeURIComponent(text)}`;
         }
 
         async function addManualOrder() {
@@ -345,9 +334,9 @@
                 paid: 'no'
             };
 
+            await fetchOrders();
             orders.unshift(order);
             await saveOrdersCloud();
-            renderPosOrders();
         }
 
         function renderPosOrders() {
@@ -416,13 +405,12 @@
                 });
 
                 await saveOrdersCloud();
-                renderPosOrders();
             }
         }
 
         renderProducts();
         fetchOrders();
-        setInterval(fetchOrders, 4000);
+        setInterval(fetchOrders, 5000);
     </script>
 </body>
 </html>
