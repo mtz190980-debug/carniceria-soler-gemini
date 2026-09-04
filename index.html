@@ -102,7 +102,7 @@
                 </select>
             </div>
             <div class="form-group"><label>Notas</label><textarea id="cust-notes" class="form-control" rows="2"></textarea></div>
-            <button type="submit" class="cart-bar-btn" style="width:100%;">Confirmar y Enviar por WhatsApp</button>
+            <button type="submit" id="submit-btn" class="cart-bar-btn" style="width:100%;">Confirmar y Enviar por WhatsApp</button>
         </form>
     </div>
 
@@ -141,8 +141,7 @@
     </div>
 
     <script>
-        // CONFIGURACIÓN DE BASE DE DATOS ONLINE GRATUITA
-        const BIN_ID = "66d81223e41b4d34e42a98f1"; // ID servidor cloud
+        const BIN_ID = "66d81223e41b4d34e42a98f1";
         const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 
         const products = [
@@ -160,7 +159,6 @@
         let cart = [];
         let orders = [];
 
-        // Descargar lista de pedidos desde la nube
         async function fetchOrders() {
             try {
                 let res = await fetch(`${API_URL}/latest`, {
@@ -176,17 +174,17 @@
             }
         }
 
-        // Subir cambios a la nube
         async function saveOrdersCloud() {
             try {
-                await fetch(API_URL, {
+                let res = await fetch(API_URL, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(orders)
                 });
-                renderPosOrders();
+                return res.ok;
             } catch (err) {
                 console.log("Error guardando en nube:", err);
+                return false;
             }
         }
 
@@ -282,6 +280,10 @@
             const totalPrice = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
             if(totalPrice < 30) { alert('El pedido mínimo para reparto es de 30.00 €'); return; }
             
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.innerText = "Guardando pedido...";
+            submitBtn.disabled = true;
+
             const order = {
                 id: Date.now(),
                 name: document.getElementById('cust-name').value,
@@ -294,22 +296,30 @@
                 paid: 'no'
             };
             
-            // Añadir al servidor central
+            // 1. Descargar primero los datos actualizados para no sobrescribir otros
+            await fetchOrders();
             orders.unshift(order);
+            
+            // 2. Guardar obligatoriamente en la nube ANTES de abrir WhatsApp
             await saveOrdersCloud();
 
+            // 3. Preparar mensaje
             let text = `*NUEVO PEDIDO CARNICERÍA*\nCliente: ${order.name}\nPoblación: ${order.town}\nTel: ${order.phone}\nTurno: ${order.slot}\n\n*DETALLE:*\n`;
             order.items.forEach(i => {
                 const pesoStr = i.qty >= 1 ? i.qty + 'kg' : (i.qty * 1000) + 'gr';
                 text += `- ${i.name} (${pesoStr}): ${(i.price * i.qty).toFixed(2)}€\n`;
             });
             text += `\n*TOTAL ESTIMADO:* ${order.total.toFixed(2)}€`;
-            
-            window.open(`https://api.whatsapp.com/send?phone=34605315278&text=${encodeURIComponent(text)}`, '_blank');
+
             cart = []; updateCartUI();
+            submitBtn.innerText = "Confirmar y Enviar por WhatsApp";
+            submitBtn.disabled = false;
+
+            // 4. Redirigir a WhatsApp de forma 100% segura para teléfonos móviles
+            window.location.href = `https://api.whatsapp.com/send?phone=34605315278&text=${encodeURIComponent(text)}`;
         }
 
-        function addManualOrder() {
+        async function addManualOrder() {
             const name = prompt("Nombre del cliente:");
             if (!name) return;
             const town = prompt("Población:") || "Tienda";
@@ -328,8 +338,10 @@
                 paid: 'no'
             };
 
+            await fetchOrders();
             orders.unshift(order);
-            saveOrdersCloud();
+            await saveOrdersCloud();
+            renderPosOrders();
         }
 
         function renderPosOrders() {
@@ -366,14 +378,14 @@
             `).join('');
         }
 
-        function updateOrderStatus(index, val) {
+        async function updateOrderStatus(index, val) {
             orders[index].status = val;
-            saveOrdersCloud();
+            await saveOrdersCloud();
         }
 
-        function updateOrderPaid(index, val) {
+        async function updateOrderPaid(index, val) {
             orders[index].paid = val;
-            saveOrdersCloud();
+            await saveOrdersCloud();
         }
 
         function toggleSelectAll(master) {
@@ -381,7 +393,7 @@
             checkboxes.forEach(cb => cb.checked = master.checked);
         }
 
-        function deleteSelectedOrders() {
+        async function deleteSelectedOrders() {
             const checkboxes = document.querySelectorAll('.order-checkbox:checked');
             if (checkboxes.length === 0) {
                 alert("Por favor, selecciona al menos un pedido para eliminar.");
@@ -397,13 +409,13 @@
                     orders.splice(idx, 1);
                 });
 
-                saveOrdersCloud();
+                await saveOrdersCloud();
+                renderPosOrders();
             }
         }
 
         renderProducts();
         fetchOrders();
-        // Comprobar si hay nuevos pedidos en el servidor cada 5 segundos
         setInterval(fetchOrders, 5000);
     </script>
 </body>
