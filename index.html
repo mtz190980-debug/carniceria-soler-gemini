@@ -110,7 +110,7 @@
         <div class="pos-actions">
             <div>
                 <h2>Panel de Mostrador (Tablet)</h2>
-                <div class="sync-badge">🟢 Sincronizado en la nube</div>
+                <div class="sync-badge">🟢 Conectado con Google Sheets</div>
             </div>
             <div>
                 <button class="manual-btn" onclick="addManualOrder()">+ Añadir Pedido Manual</button>
@@ -141,8 +141,7 @@
     </div>
 
     <script>
-        // SERVIDOR DE NUBE SIN RESTRICCIONES DE CLAVE NI CORS
-        const CLOUD_ENDPOINT = 'https://jsonblob.com/api/jsonBlob/1280456184985288704';
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx3smWT8rF33XOIkNKucs3NbqQ1YRF0CK_xV7Cj-465q0pd12v3UkF1lZdvwEmMt5Ocuw/exec';
 
         const products = [
             { id: 1001, name: "LLOM DE PORC", price: 11.73, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1432139555190-58524dae6a55?w=200&auto=format&fit=crop" },
@@ -161,27 +160,26 @@
 
         async function fetchOrders() {
             try {
-                let res = await fetch(CLOUD_ENDPOINT, { method: 'GET' });
+                let res = await fetch(GOOGLE_SCRIPT_URL);
                 if (res.ok) {
-                    let data = await res.json();
-                    orders = Array.isArray(data) ? data : [];
+                    orders = await res.json();
                     renderPosOrders();
                 }
             } catch (err) {
-                console.log("Error sincronizando:", err);
+                console.log("Error leyendo pedidos:", err);
             }
         }
 
-        async function saveOrdersCloud() {
+        async function sendOrderToGoogle(orderData) {
             try {
-                await fetch(CLOUD_ENDPOINT, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify(orders)
+                await fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(orderData)
                 });
-                renderPosOrders();
             } catch (err) {
-                console.log("Error guardando en nube:", err);
+                console.log("Error enviando:", err);
             }
         }
 
@@ -293,12 +291,7 @@
                 paid: 'no'
             };
             
-            // Traer pedidos actuales para no machacar los existentes
-            await fetchOrders();
-            orders.unshift(order);
-            
-            // Guardar obligatoriamente en la nube
-            await saveOrdersCloud();
+            await sendOrderToGoogle(order);
 
             let text = `*NUEVO PEDIDO CARNICERÍA*\nCliente: ${order.name}\nPoblación: ${order.town}\nTel: ${order.phone}\nTurno: ${order.slot}\n\n*DETALLE:*\n`;
             order.items.forEach(i => {
@@ -311,7 +304,6 @@
             submitBtn.innerText = "Confirmar y Enviar por WhatsApp";
             submitBtn.disabled = false;
 
-            // Redirección segura a WhatsApp
             window.location.href = `https://api.whatsapp.com/send?phone=34605315278&text=${encodeURIComponent(text)}`;
         }
 
@@ -334,9 +326,8 @@
                 paid: 'no'
             };
 
-            await fetchOrders();
-            orders.unshift(order);
-            await saveOrdersCloud();
+            await sendOrderToGoogle(order);
+            setTimeout(fetchOrders, 1000);
         }
 
         function renderPosOrders() {
@@ -349,22 +340,22 @@
                 return;
             }
 
-            tbody.innerHTML = orders.map((o, idx) => `
+            tbody.innerHTML = orders.slice().reverse().map((o) => `
                 <tr>
-                    <td style="text-align:center;"><input type="checkbox" class="order-checkbox" data-index="${idx}"></td>
+                    <td style="text-align:center;"><input type="checkbox" class="order-checkbox" data-id="${o.id}"></td>
                     <td><strong>${o.name}</strong><br><small>${o.phone}</small></td>
                     <td>${o.town}</td>
                     <td>${o.slot}</td>
                     <td>${o.items.map(i => i.qty && typeof i.qty === 'number' ? `${i.name} (${i.qty >= 1 ? i.qty+'kg' : (i.qty*1000)+'gr'})` : i.name).join(', ')}<br><strong>Total: ${o.total.toFixed(2)}€</strong></td>
                     <td>
-                        <select class="status-select" onchange="updateOrderStatus(${idx}, this.value)">
+                        <select class="status-select" onchange="updateOrderStatus('${o.id}', this.value, '${o.paid}')">
                             <option value="recibido" ${o.status === 'recibido' ? 'selected' : ''}>Recibido</option>
                             <option value="preparacion" ${o.status === 'preparacion' ? 'selected' : ''}>En preparación</option>
                             <option value="entregado" ${o.status === 'entregado' ? 'selected' : ''}>Entregado</option>
                         </select>
                     </td>
                     <td>
-                        <select class="status-select" onchange="updateOrderPaid(${idx}, this.value)">
+                        <select class="status-select" onchange="updateOrderPaid('${o.id}', '${o.status}', this.value)">
                             <option value="no" ${o.paid === 'no' ? 'selected' : ''}>No</option>
                             <option value="si" ${o.paid === 'si' ? 'selected' : ''}>Sí</option>
                         </select>
@@ -373,14 +364,12 @@
             `).join('');
         }
 
-        async function updateOrderStatus(index, val) {
-            orders[index].status = val;
-            await saveOrdersCloud();
+        async function updateOrderStatus(id, status, paid) {
+            await sendOrderToGoogle({ action: 'update', id: id, status: status, paid: paid });
         }
 
-        async function updateOrderPaid(index, val) {
-            orders[index].paid = val;
-            await saveOrdersCloud();
+        async function updateOrderPaid(id, status, paid) {
+            await sendOrderToGoogle({ action: 'update', id: id, status: status, paid: paid });
         }
 
         function toggleSelectAll(master) {
@@ -395,16 +384,9 @@
                 return;
             }
 
-            if (confirm(`¿Estás seguro de que deseas eliminar ${checkboxes.length} pedido(s)?`)) {
-                const indexesToDelete = Array.from(checkboxes)
-                    .map(cb => parseInt(cb.getAttribute('data-index')))
-                    .sort((a, b) => b - a);
-
-                indexesToDelete.forEach(idx => {
-                    orders.splice(idx, 1);
-                });
-
-                await saveOrdersCloud();
+            if (confirm(`¿Estás seguro de limpiar los pedidos seleccionados?`)) {
+                await sendOrderToGoogle({ action: 'clear' });
+                setTimeout(fetchOrders, 1000);
             }
         }
 
