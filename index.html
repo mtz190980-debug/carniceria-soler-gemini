@@ -42,6 +42,7 @@
         .pos-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px; }
         .delete-btn { background: var(--accent); color: white; border: none; padding: 8px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
         .manual-btn { background: var(--primary); color: white; border: none; padding: 8px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
+        .sync-badge { font-size: 0.75rem; color: var(--success); font-weight: bold; display: flex; align-items: center; gap: 4px; }
     </style>
 </head>
 <body>
@@ -107,7 +108,10 @@
 
     <div id="view-pos" class="view container">
         <div class="pos-actions">
-            <h2>Panel de Mostrador (Tablet)</h2>
+            <div>
+                <h2>Panel de Mostrador (Tablet)</h2>
+                <div class="sync-badge">🟢 Sincronizado en la nube</div>
+            </div>
             <div>
                 <button class="manual-btn" onclick="addManualOrder()">+ Añadir Pedido Manual</button>
                 <button class="delete-btn" onclick="deleteSelectedOrders()">🗑️ Eliminar Seleccionados</button>
@@ -126,7 +130,7 @@
                 </tr>
             </thead>
             <tbody id="pos-orders-body">
-                <tr><td colspan="7" style="text-align:center;">Sin pedidos registrados aún.</td></tr>
+                <tr><td colspan="7" style="text-align:center;">Cargando pedidos...</td></tr>
             </tbody>
         </table>
     </div>
@@ -137,6 +141,10 @@
     </div>
 
     <script>
+        // CONFIGURACIÓN DE BASE DE DATOS ONLINE GRATUITA
+        const BIN_ID = "66d81223e41b4d34e42a98f1"; // ID servidor cloud
+        const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
         const products = [
             { id: 1001, name: "LLOM DE PORC", price: 11.73, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1432139555190-58524dae6a55?w=200&auto=format&fit=crop" },
             { id: 1002, name: "CAP DE LLOM", price: 9.72, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1603048588665-791ca8aea617?w=200&auto=format&fit=crop" },
@@ -150,10 +158,36 @@
         ];
         
         let cart = [];
-        let orders = JSON.parse(localStorage.getItem('carni_orders')) || [];
+        let orders = [];
 
-        function saveOrders() {
-            localStorage.setItem('carni_orders', JSON.stringify(orders));
+        // Descargar lista de pedidos desde la nube
+        async function fetchOrders() {
+            try {
+                let res = await fetch(`${API_URL}/latest`, {
+                    headers: { "X-Bin-Meta": "false" }
+                });
+                if (res.ok) {
+                    let data = await res.json();
+                    orders = Array.isArray(data) ? data : [];
+                    renderPosOrders();
+                }
+            } catch (err) {
+                console.log("Error sincronizando:", err);
+            }
+        }
+
+        // Subir cambios a la nube
+        async function saveOrdersCloud() {
+            try {
+                await fetch(API_URL, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(orders)
+                });
+                renderPosOrders();
+            } catch (err) {
+                console.log("Error guardando en nube:", err);
+            }
         }
 
         function renderProducts(filter = 'all') {
@@ -243,7 +277,7 @@
 
         function switchToCart() { switchView('cart', document.querySelectorAll('.tab-btn')[1]); }
 
-        function submitOrder(e) {
+        async function submitOrder(e) {
             e.preventDefault();
             const totalPrice = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
             if(totalPrice < 30) { alert('El pedido mínimo para reparto es de 30.00 €'); return; }
@@ -260,9 +294,9 @@
                 paid: 'no'
             };
             
-            orders.push(order);
-            saveOrders();
-            renderPosOrders();
+            // Añadir al servidor central
+            orders.unshift(order);
+            await saveOrdersCloud();
 
             let text = `*NUEVO PEDIDO CARNICERÍA*\nCliente: ${order.name}\nPoblación: ${order.town}\nTel: ${order.phone}\nTurno: ${order.slot}\n\n*DETALLE:*\n`;
             order.items.forEach(i => {
@@ -279,7 +313,7 @@
             const name = prompt("Nombre del cliente:");
             if (!name) return;
             const town = prompt("Población:") || "Tienda";
-            const summary = prompt("Resumen de pedido (ej: 1kg Lomo, 500g Hamburguesas):") || "Pedido por WhatsApp";
+            const summary = prompt("Resumen de pedido (ej: 1kg Lomo, 500g Hamburguesas):") || "Pedido por teléfono";
             const total = parseFloat(prompt("Importe total (€):") || "0");
 
             const order = {
@@ -287,16 +321,15 @@
                 name: name,
                 town: town,
                 phone: "-",
-                slot: "WhatsApp",
+                slot: "Manual",
                 total: isNaN(total) ? 0 : total,
                 items: [{ name: summary, qty: 1, price: total }],
                 status: 'recibido',
                 paid: 'no'
             };
 
-            orders.push(order);
-            saveOrders();
-            renderPosOrders();
+            orders.unshift(order);
+            saveOrdersCloud();
         }
 
         function renderPosOrders() {
@@ -315,7 +348,7 @@
                     <td><strong>${o.name}</strong><br><small>${o.phone}</small></td>
                     <td>${o.town}</td>
                     <td>${o.slot}</td>
-                    <td>${o.items.map(i => i.qty ? `${i.name}` : i.name).join(', ')}<br><strong>Total: ${o.total.toFixed(2)}€</strong></td>
+                    <td>${o.items.map(i => i.qty && typeof i.qty === 'number' ? `${i.name} (${i.qty >= 1 ? i.qty+'kg' : (i.qty*1000)+'gr'})` : i.name).join(', ')}<br><strong>Total: ${o.total.toFixed(2)}€</strong></td>
                     <td>
                         <select class="status-select" onchange="updateOrderStatus(${idx}, this.value)">
                             <option value="recibido" ${o.status === 'recibido' ? 'selected' : ''}>Recibido</option>
@@ -335,12 +368,12 @@
 
         function updateOrderStatus(index, val) {
             orders[index].status = val;
-            saveOrders();
+            saveOrdersCloud();
         }
 
         function updateOrderPaid(index, val) {
             orders[index].paid = val;
-            saveOrders();
+            saveOrdersCloud();
         }
 
         function toggleSelectAll(master) {
@@ -364,13 +397,14 @@
                     orders.splice(idx, 1);
                 });
 
-                saveOrders();
-                renderPosOrders();
+                saveOrdersCloud();
             }
         }
 
         renderProducts();
-        renderPosOrders();
+        fetchOrders();
+        // Comprobar si hay nuevos pedidos en el servidor cada 5 segundos
+        setInterval(fetchOrders, 5000);
     </script>
 </body>
 </html>
