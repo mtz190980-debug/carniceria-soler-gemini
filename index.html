@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carnicería Angel Soler - Entregues a domicili</title>
+    <style>
+        :root { --primary: #8b0000; --bg: #f8f9fa; --text: #2c3e50; --accent: #e74c3c; --success: #27ae60; --border: #e2e8f0; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: var(--bg); color: var(--text); padding-bottom: 80px; }
+        header { background: var(--primary); color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 100; }
+        header h1 { font-size: 1.3rem; }
+        header p { font-size: 0.8rem; opacity: 0.9; }
+        .nav-tabs { display: flex; background: white; border-bottom: 1px solid var(--border); position: sticky; top: 60px; z-index: 99; }
+        .tab-btn { flex: 1; padding: 12px; font-weight: bold; font-size: 0.9rem; border: none; background: none; color: #7f8c8d; cursor: pointer; border-bottom: 3px solid transparent; }
+        .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+        .container { padding: 15px; max-width: 800px; margin: 0 auto; }
+        .categories { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 15px; }
+        .cat-chip { background: #edf2f7; padding: 8px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+        .cat-chip.active { background: var(--primary); color: white; }
+        
+        .product-card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+        .product-img { width: 80px; height: 80px; border-radius: 8px; object-fit: cover; background-color: #e2e8f0; flex-shrink: 0; }
+        .product-info { flex: 1; }
+        .product-title { font-size: 0.95rem; font-weight: bold; margin-bottom: 2px; }
+        .product-price { font-size: 0.85rem; color: var(--primary); font-weight: 700; margin-bottom: 6px; }
+        .weight-select { padding: 4px 8px; font-size: 0.8rem; border-radius: 4px; border: 1px solid var(--border); background: #f8f9fa; }
+        
+        .add-btn { background: var(--primary); color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .warning-banner { background: #fff5f5; border-left: 4px solid var(--accent); padding: 10px; border-radius: 4px; font-size: 0.8rem; color: #c53030; margin-bottom: 15px; }
+        .cart-bar { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid var(--border); padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; z-index: 101; }
+        .cart-bar-btn { background: var(--success); color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        .view { display: none; }
+        .view.active { display: block; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 4px; }
+        .form-control { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; }
+        .pos-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; }
+        .pos-table th, .pos-table td { border: 1px solid var(--border); padding: 8px; font-size: 0.85rem; text-align: left; }
+        .status-select { padding: 5px; border-radius: 4px; border: 1px solid var(--border); background: #fff; font-size: 0.8rem; }
+        
+        .pos-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px; }
+        .delete-btn { background: var(--accent); color: white; border: none; padding: 8px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
+        .manual-btn { background: var(--primary); color: white; border: none; padding: 8px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Carnicería Angel Soler - Entregues a domicili</h1>
+        <p>Atzeneta • El Palomar • Albaida • Carrícola • Bèlgida • Bufali</p>
+    </header>
+
+    <div class="nav-tabs">
+        <button class="tab-btn active" onclick="switchView('store', this)">Tienda</button>
+        <button class="tab-btn" onclick="switchView('cart', this)">Mi Pedido (<span id="cart-count">0</span>)</button>
+        <button class="tab-btn" onclick="switchView('pos', this)">Tablet Mostrador</button>
+    </div>
+
+    <div id="view-store" class="view active container">
+        <div class="warning-banner">
+            ⚠️ <strong>Aviso sobre peso:</strong> La carne fresca se corta a mano. El importe final se confirmará tras el pesaje exacto en tienda.
+        </div>
+        <div class="categories">
+            <div class="cat-chip active" onclick="filterCat('all', this)">Todos</div>
+            <div class="cat-chip" onclick="filterCat('PORC', this)">Cerdo</div>
+            <div class="cat-chip" onclick="filterCat('TERNERA', this)">Ternera</div>
+            <div class="cat-chip" onclick="filterCat('ELABORATS', this)">Elaborados</div>
+        </div>
+        <div id="product-container"></div>
+    </div>
+
+    <div id="view-cart" class="view container">
+        <h2>Resumen de tu Pedido</h2>
+        <div id="cart-items-list" style="margin: 15px 0;"></div>
+        <div style="background:white; padding:15px; border-radius:8px; border:1px solid var(--border); margin-bottom:20px;">
+            <strong>Total Estimado: <span id="cart-total-price">0.00 €</span></strong>
+            <p style="font-size:0.75rem; color:#718096;">* Pedido mínimo: 30.00 €</p>
+        </div>
+        <h3>Datos de Entrega</h3>
+        <form onsubmit="submitOrder(event)">
+            <div class="form-group"><label>Nombre</label><input type="text" id="cust-name" class="form-control" required></div>
+            <div class="form-group">
+                <label>Población</label>
+                <select id="cust-town" class="form-control" required>
+                    <option value="">-- Seleccionar --</option>
+                    <option value="Atzeneta d'Albaida">Atzeneta d'Albaida</option>
+                    <option value="El Palomar">El Palomar</option>
+                    <option value="Albaida">Albaida</option>
+                    <option value="Carrícola">Carrícola</option>
+                    <option value="Bèlgida">Bèlgida</option>
+                    <option value="Bufali">Bufali</option>
+                </select>
+            </div>
+            <div class="form-group"><label>Dirección</label><input type="text" id="cust-address" class="form-control" required></div>
+            <div class="form-group"><label>Teléfono Móvil</label><input type="tel" id="cust-phone" class="form-control" required></div>
+            <div class="form-group">
+                <label>Turno de Reparto</label>
+                <select id="cust-slot" class="form-control" required>
+                    <option value="Mediodía (13:00 - 15:00)">Mediodía (13:00 - 15:00)</option>
+                    <option value="Noche (20:30 - 21:30)">Noche (20:30 - 21:30)</option>
+                </select>
+            </div>
+            <div class="form-group"><label>Notas</label><textarea id="cust-notes" class="form-control" rows="2"></textarea></div>
+            <button type="submit" class="cart-bar-btn" style="width:100%;">Confirmar y Enviar por WhatsApp</button>
+        </form>
+    </div>
+
+    <div id="view-pos" class="view container">
+        <div class="pos-actions">
+            <h2>Panel de Mostrador (Tablet)</h2>
+            <div>
+                <button class="manual-btn" onclick="addManualOrder()">+ Añadir Pedido Manual</button>
+                <button class="delete-btn" onclick="deleteSelectedOrders()">🗑️ Eliminar Seleccionados</button>
+            </div>
+        </div>
+        <table class="pos-table">
+            <thead>
+                <tr>
+                    <th style="width: 30px; text-align: center;"><input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
+                    <th>Cliente</th>
+                    <th>Población</th>
+                    <th>Turno</th>
+                    <th>Pedido</th>
+                    <th>Estado</th>
+                    <th>Cobrado</th>
+                </tr>
+            </thead>
+            <tbody id="pos-orders-body">
+                <tr><td colspan="7" style="text-align:center;">Sin pedidos registrados aún.</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="cart-bar" id="floating-cart-bar">
+        <div>Total: <strong id="bar-total" style="color:var(--primary);">0.00 €</strong></div>
+        <button class="cart-bar-btn" onclick="switchToCart()">Ver Cesta →</button>
+    </div>
+
+    <script>
+        const products = [
+            { id: 1001, name: "LLOM DE PORC", price: 11.73, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1432139555190-58524dae6a55?w=200&auto=format&fit=crop" },
+            { id: 1002, name: "CAP DE LLOM", price: 9.72, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1603048588665-791ca8aea617?w=200&auto=format&fit=crop" },
+            { id: 1003, name: "MAGRE DE PORC", price: 8.09, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1602470520998-f4a52199a3d6?w=200&auto=format&fit=crop" },
+            { id: 1004, name: "COSTELLETES PORC", price: 9.96, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1544025162-d76694265947?w=200&auto=format&fit=crop" },
+            { id: 1011, name: "MAGRE PICAT", price: 8.08, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1588168333986-5078d3ae3976?w=200&auto=format&fit=crop" },
+            { id: 1018, name: "SECRETO IBERICO", price: 14.00, cat: "PORC", unit: "kg", img: "https://images.unsplash.com/photo-1558030006-450675393462?w=200&auto=format&fit=crop" },
+            { id: 6003, name: "BOTIFARRA DE CEBA", price: 8.28, cat: "ELABORATS", unit: "kg", img: "https://images.unsplash.com/photo-1529042410759-befb1204b468?w=200&auto=format&fit=crop" },
+            { id: 6005, name: "CHORIZO ARTESANO", price: 7.74, cat: "ELABORATS", unit: "kg", img: "chorizocarni.jpg" },
+            { id: 2001, name: "LLOM TERNERA", price: 27.27, cat: "TERNERA", unit: "kg", img: "https://images.unsplash.com/photo-1588347818036-558601350947?w=200&auto=format&fit=crop" }
+        ];
+        
+        let cart = [];
+        let orders = JSON.parse(localStorage.getItem('carni_orders')) || [];
+
+        function saveOrders() {
+            localStorage.setItem('carni_orders', JSON.stringify(orders));
+        }
+
+        function renderProducts(filter = 'all') {
+            const container = document.getElementById('product-container');
+            container.innerHTML = '';
+            const filtered = filter === 'all' ? products : products.filter(p => p.cat === filter);
+            filtered.forEach(p => {
+                container.innerHTML += `
+                    <div class="product-card">
+                        <img src="${p.img}" class="product-img" alt="${p.name}">
+                        <div class="product-info">
+                            <div class="product-title">${p.name}</div>
+                            <div class="product-price">${p.price.toFixed(2)} € / ${p.unit}</div>
+                            <select id="weight-${p.id}" class="weight-select">
+                                <option value="0.25">250 gr</option>
+                                <option value="0.50" selected>500 gr</option>
+                                <option value="0.75">750 gr</option>
+                                <option value="1.00">1 kg</option>
+                                <option value="1.50">1,5 kg</option>
+                                <option value="2.00">2 kg</option>
+                            </select>
+                        </div>
+                        <button class="add-btn" onclick="addToCart(${p.id})">+ Añadir</button>
+                    </div>`;
+            });
+        }
+
+        function filterCat(cat, el) {
+            document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
+            el.classList.add('active');
+            renderProducts(cat);
+        }
+
+        function addToCart(pId) {
+            const prod = products.find(p => p.id === pId);
+            const selectedWeight = parseFloat(document.getElementById(`weight-${pId}`).value);
+            
+            const existing = cart.find(item => item.id === pId);
+            if(existing) {
+                existing.qty += selectedWeight;
+            } else {
+                cart.push({ ...prod, qty: selectedWeight });
+            }
+            updateCartUI();
+        }
+
+        function updateCartUI() {
+            const totalPrice = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
+            
+            document.getElementById('cart-count').innerText = cart.length;
+            document.getElementById('bar-total').innerText = totalPrice.toFixed(2) + ' €';
+            document.getElementById('cart-total-price').innerText = totalPrice.toFixed(2) + ' €';
+            
+            const list = document.getElementById('cart-items-list');
+            if(cart.length === 0) {
+                list.innerHTML = '<p style="color:#7f8c8d; text-align:center;">Cesta vacía</p>';
+            } else {
+                list.innerHTML = cart.map(i => `
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:white; padding:10px; margin-bottom:6px; border:1px solid var(--border); border-radius:6px;">
+                        <div>
+                            <strong>${i.name}</strong><br>
+                            <small style="color:#7f8c8d;">${i.qty >= 1 ? i.qty + ' kg' : (i.qty * 1000) + ' gr'}</small>
+                        </div>
+                        <strong>${(i.price * i.qty).toFixed(2)} €</strong>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function switchView(viewName, btnEl) {
+            if (viewName === 'pos') {
+                const password = prompt("Introduce el PIN de acceso para la Tablet:");
+                if (password !== "carni26") {
+                    alert("Contraseña incorrecta.");
+                    return;
+                }
+            }
+
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById('view-' + viewName).classList.add('active');
+            if(btnEl) {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                btnEl.classList.add('active');
+            }
+            document.getElementById('floating-cart-bar').style.display = viewName === 'cart' ? 'none' : 'flex';
+        }
+
+        function switchToCart() { switchView('cart', document.querySelectorAll('.tab-btn')[1]); }
+
+        function submitOrder(e) {
+            e.preventDefault();
+            const totalPrice = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
+            if(totalPrice < 30) { alert('El pedido mínimo para reparto es de 30.00 €'); return; }
+            
+            const order = {
+                id: Date.now(),
+                name: document.getElementById('cust-name').value,
+                town: document.getElementById('cust-town').value,
+                phone: document.getElementById('cust-phone').value,
+                slot: document.getElementById('cust-slot').value,
+                total: totalPrice,
+                items: [...cart],
+                status: 'recibido',
+                paid: 'no'
+            };
+            
+            orders.push(order);
+            saveOrders();
+            renderPosOrders();
+
+            let text = `*NUEVO PEDIDO CARNICERÍA*\nCliente: ${order.name}\nPoblación: ${order.town}\nTel: ${order.phone}\nTurno: ${order.slot}\n\n*DETALLE:*\n`;
+            order.items.forEach(i => {
+                const pesoStr = i.qty >= 1 ? i.qty + 'kg' : (i.qty * 1000) + 'gr';
+                text += `- ${i.name} (${pesoStr}): ${(i.price * i.qty).toFixed(2)}€\n`;
+            });
+            text += `\n*TOTAL ESTIMADO:* ${order.total.toFixed(2)}€`;
+            
+            window.open(`https://api.whatsapp.com/send?phone=34605315278&text=${encodeURIComponent(text)}`, '_blank');
+            cart = []; updateCartUI();
+        }
+
+        function addManualOrder() {
+            const name = prompt("Nombre del cliente:");
+            if (!name) return;
+            const town = prompt("Población:") || "Tienda";
+            const summary = prompt("Resumen de pedido (ej: 1kg Lomo, 500g Hamburguesas):") || "Pedido por WhatsApp";
+            const total = parseFloat(prompt("Importe total (€):") || "0");
+
+            const order = {
+                id: Date.now(),
+                name: name,
+                town: town,
+                phone: "-",
+                slot: "WhatsApp",
+                total: isNaN(total) ? 0 : total,
+                items: [{ name: summary, qty: 1, price: total }],
+                status: 'recibido',
+                paid: 'no'
+            };
+
+            orders.push(order);
+            saveOrders();
+            renderPosOrders();
+        }
+
+        function renderPosOrders() {
+            const tbody = document.getElementById('pos-orders-body');
+            const selectAll = document.getElementById('select-all');
+            if(selectAll) selectAll.checked = false;
+
+            if(orders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Sin pedidos registrados aún.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = orders.map((o, idx) => `
+                <tr>
+                    <td style="text-align:center;"><input type="checkbox" class="order-checkbox" data-index="${idx}"></td>
+                    <td><strong>${o.name}</strong><br><small>${o.phone}</small></td>
+                    <td>${o.town}</td>
+                    <td>${o.slot}</td>
+                    <td>${o.items.map(i => i.qty ? `${i.name}` : i.name).join(', ')}<br><strong>Total: ${o.total.toFixed(2)}€</strong></td>
+                    <td>
+                        <select class="status-select" onchange="updateOrderStatus(${idx}, this.value)">
+                            <option value="recibido" ${o.status === 'recibido' ? 'selected' : ''}>Recibido</option>
+                            <option value="preparacion" ${o.status === 'preparacion' ? 'selected' : ''}>En preparación</option>
+                            <option value="entregado" ${o.status === 'entregado' ? 'selected' : ''}>Entregado</option>
+                        </select>
+                    </td>
+                    <td>
+                        <select class="status-select" onchange="updateOrderPaid(${idx}, this.value)">
+                            <option value="no" ${o.paid === 'no' ? 'selected' : ''}>No</option>
+                            <option value="si" ${o.paid === 'si' ? 'selected' : ''}>Sí</option>
+                        </select>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function updateOrderStatus(index, val) {
+            orders[index].status = val;
+            saveOrders();
+        }
+
+        function updateOrderPaid(index, val) {
+            orders[index].paid = val;
+            saveOrders();
+        }
+
+        function toggleSelectAll(master) {
+            const checkboxes = document.querySelectorAll('.order-checkbox');
+            checkboxes.forEach(cb => cb.checked = master.checked);
+        }
+
+        function deleteSelectedOrders() {
+            const checkboxes = document.querySelectorAll('.order-checkbox:checked');
+            if (checkboxes.length === 0) {
+                alert("Por favor, selecciona al menos un pedido para eliminar.");
+                return;
+            }
+
+            if (confirm(`¿Estás seguro de que deseas eliminar ${checkboxes.length} pedido(s)?`)) {
+                const indexesToDelete = Array.from(checkboxes)
+                    .map(cb => parseInt(cb.getAttribute('data-index')))
+                    .sort((a, b) => b - a);
+
+                indexesToDelete.forEach(idx => {
+                    orders.splice(idx, 1);
+                });
+
+                saveOrders();
+                renderPosOrders();
+            }
+        }
+
+        renderProducts();
+        renderPosOrders();
+    </script>
+</body>
+</html>
